@@ -1,4 +1,4 @@
-from os import remove as osremove, path as ospath, mkdir, walk, listdir, rmdir
+from os import remove as osremove, path as ospath, mkdir, walk, listdir, rmdir, makedirs
 from sys import exit as sysexit
 from json import loads as jsnloads
 from shutil import rmtree
@@ -18,21 +18,22 @@ def clean_download(path: str):
         LOGGER.info(f"Cleaning Download: {path}")
         try:
             rmtree(path)
-        except FileNotFoundError:
+        except:
             pass
 
 def start_cleanup():
     try:
         rmtree(DOWNLOAD_DIR)
-    except FileNotFoundError:
+    except:
         pass
+    makedirs(DOWNLOAD_DIR)
 
 def clean_all():
     aria2.remove_all(True)
-    get_client().torrents_delete(torrent_hashes="all", delete_files=True)
+    get_client().torrents_delete(torrent_hashes="all")
     try:
         rmtree(DOWNLOAD_DIR)
-    except FileNotFoundError:
+    except:
         pass
 
 def exit_clean_up(signal, frame):
@@ -171,10 +172,10 @@ def take_ss(video_file):
     Image.open(des_dir).convert("RGB").save(des_dir, "JPEG")
     return des_dir
 
-def split(path, size, file_, dirpath, split_size, start_time=0, i=1, inLoop=False):
+def split_file(path, size, file_, dirpath, split_size, start_time=0, i=1, inLoop=False):
     parts = ceil(size/TG_SPLIT_SIZE)
     if EQUAL_SPLITS and not inLoop:
-        split_size = ceil(size/parts)
+        split_size = ceil(size/parts) + 1000
     if file_.upper().endswith(VIDEO_SUFFIXES):
         base_name, extension = ospath.splitext(file_)
         split_size = split_size - 2500000
@@ -183,13 +184,13 @@ def split(path, size, file_, dirpath, split_size, start_time=0, i=1, inLoop=Fals
             out_path = ospath.join(dirpath, parted_name)
             srun(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i",
                             path, "-ss", str(start_time), "-fs", str(split_size),
-                            "-async", "1", "-strict", "-2", "-c", "copy", out_path])
+                            "-async", "1", "-strict", "-2", "-map", "0", "-c", "copy", out_path])
             out_size = get_path_size(out_path)
             if out_size > 2097152000:
                 dif = out_size - 2097152000
                 split_size = split_size - dif + 2500000
                 osremove(out_path)
-                return split(path, size, file_, dirpath, split_size, start_time, i, inLoop=True)
+                return split_file(path, size, file_, dirpath, split_size, start_time, i, inLoop=True)
             lpd = get_media_info(out_path)[0]
             if lpd <= 4 or out_size < 1000000:
                 osremove(out_path)
@@ -208,18 +209,21 @@ def get_media_info(path):
     except Exception as e:
         LOGGER.error(f"get_media_info: {e}")
         return 0, None, None
-    try:
-        duration = round(float(fields['duration']))
-    except:
-        duration = 0
-    try:
-        artist = str(fields['tags']['artist'])
-    except:
-        artist = None
-    try:
-        title = str(fields['tags']['title'])
-    except:
+
+    duration = round(float(fields.get('duration', 0)))
+
+    fields = fields.get('tags')
+    if fields is not None:
+        artist = fields.get('artist')
+        if artist is None:
+            artist = fields.get('ARTIST')
+        title = fields.get('title')
+        if title is None:
+            title = fields.get('TITLE')
+    else:
         title = None
+        artist = None
+
     return duration, artist, title
 
 def get_video_resolution(path):
@@ -234,4 +238,3 @@ def get_video_resolution(path):
     except Exception as e:
         LOGGER.error(f"get_video_resolution: {e}")
         return 480, 320
-
